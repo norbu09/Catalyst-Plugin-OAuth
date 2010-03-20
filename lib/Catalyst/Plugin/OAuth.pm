@@ -773,9 +773,9 @@ sub publish_access_token {
 
 sub check_nonce_and_timestamp {
     my ($self, $consumer_key, $timestamp, $nonce) = @_;
-    return $self->error(q{Invalid Consumer});
-    return $self->error(q{Invalid Timestamp});
-    return $self->error(q{Invalid Nonce});
+    #return $self->error(q{Invalid Consumer});
+    #return $self->error(q{Invalid Timestamp});
+    #return $self->error(q{Invalid Nonce});
     return 1;
 }
 
