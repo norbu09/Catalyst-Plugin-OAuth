@@ -71,8 +71,8 @@ See it.
 
     sub init {
         my $self = shift;
-        $self->oauth->allow_extra_params(qw/file size/);
-        $self->oauth->support_signature_methods(qw/HMAC-SHA1 PLAINTEXT/);
+        $self->{oauth}->allow_extra_params(qw/file size/);
+        $self->{oauth}->support_signature_methods(qw/HMAC-SHA1 PLAINTEXT/);
     }
 
     sub get_request_token_secret {
@@ -232,8 +232,8 @@ and what extra-param is allowed.
 
     sub init {
         my $self = shift;
-        $self->oauth->support_signature_method(qw/HMAC-SHA1 PLAINTEXT/);
-        $self->oauth->allow_extra_params(qw/file size/);
+        $self->{oauth}->support_signature_method(qw/HMAC-SHA1 PLAINTEXT/);
+        $self->{oauth}->allow_extra_params(qw/file size/);
     }
 
 =head2 get_request_token_secret($token_string)
@@ -342,7 +342,7 @@ For example,
 
 is same as
 
-    $self->oauth->allow_extra_param('foo');
+    $self->{oauth}->allow_extra_param('foo');
 
 =head2 request_method
 
@@ -559,9 +559,9 @@ sub __oauth__service {
 
     my $self = shift;
      $self->{oauth} = OAuth::Lite::ServerUtil->new( strict => 0 );
-     $self->oauth->allow_extra_params($self->config->{OAuth}->{allow_extra_params})
+     $self->{oauth}->allow_extra_params($self->config->{OAuth}->{allow_extra_params})
         if $self->config->{OAuth}->{allow_extra_params};
-     $self->oauth->support_signature_methods($self->config->{OAuth}->{support_signature_methods})
+     $self->{oauth}->support_signature_methods($self->config->{OAuth}->{support_signature_methods})
         if $self->config->{OAuth}->{support_signature_methods};
      $self->{oauth_mode} = PROTECTED_RESOURCE;
      $self->{oauth_accepts_consumer_request} = 0;
@@ -589,7 +589,7 @@ sub __oauth__service {
     }
     my $xrds_location = $self->request->header('XRDSLocation');
     $self->{xrds_location} = $xrds_location if $xrds_location;
-    #$self->oauth_init(@_);
+    #$self->{oauth}_init(@_);
 
     my $params = {};
     my $is_authorized = 0;
@@ -606,8 +606,8 @@ sub __oauth__service {
         ($realm, $params) = parse_auth_header($authorization);
     }
 
-    unless ($self->oauth->validate_params($params, $needs_to_check_token)) {
-        return $self->errout(400, $self->oauth->errstr);
+    unless ($self->{oauth}->validate_params($params, $needs_to_check_token)) {
+        return $self->errout(400, $self->{oauth}->errstr);
     }
 
     my $consumer_key = $params->{oauth_consumer_key};
@@ -626,12 +626,12 @@ sub __oauth__service {
 
     if ($self->is_required_request_token) {
 
-        $self->oauth->verify_signature(
+        $self->{oauth}->verify_signature(
             method          => $self->request_method(),
             params          => $params,
             url             => $request_uri,
             consumer_secret => $consumer_secret,
-        ) or return $self->errout(401, $self->oauth->errstr||SIGNATURE_INVALID);
+        ) or return $self->errout(401, $self->{oauth}->errstr||SIGNATURE_INVALID);
 
         my $callback_url = $params->{oauth_callback};
         my $request_token = $self->publish_request_token($consumer_key, $callback_url)
@@ -645,13 +645,13 @@ sub __oauth__service {
         unless (defined $token_secret) {
             return $self->errout(401, $self->errstr||TOKEN_REJECTED);
         }
-        $self->oauth->verify_signature(
+        $self->{oauth}->verify_signature(
             method          => $self->request_method(),
             params          => $params,
             url             => $request_uri,
             consumer_secret => $consumer_secret || '',
             token_secret    => $token_secret || '',
-        ) or return $self->errout(401, $self->oauth->errstr||SIGNATURE_INVALID);
+        ) or return $self->errout(401, $self->{oauth}->errstr||SIGNATURE_INVALID);
         my $verifier = $params->{oauth_verifier} || '';
         my $access_token = $self->publish_access_token($consumer_key, $token_value, $verifier)
             or return $self->errout(401, $self->errstr);
@@ -668,13 +668,13 @@ sub __oauth__service {
             }
         }
 
-        $self->oauth->verify_signature(
+        $self->{oauth}->verify_signature(
             method          => $self->request_method(),
             params          => $params,
             url             => $request_uri,
             consumer_secret => $consumer_secret || '',
             token_secret    => $token_secret,
-        ) or return $self->errout(401, $self->oauth->errstr||SIGNATURE_INVALID);
+        ) or return $self->errout(401, $self->{oauth}->errstr||SIGNATURE_INVALID);
 
         if ($self->is_reverse_phone_home) {
             $self->verify_requestor_approval($consumer_key, $params->{xoauth_requestor_id})
@@ -683,7 +683,7 @@ sub __oauth__service {
 
         $self->{oauth_completed_validation} = 1;
 
-        return $self->oauth_service($params);
+        return $self->{oauth}_service($params);
     }
 }
 
@@ -813,35 +813,35 @@ sub errout {
 # TODO fix the output to use Catalyst methods
     my ($self, $code, $message, $description) = @_;
 
-    if ( ( $self->request_method() eq 'GET'
-        || $self->request_method() eq 'HEAD') && 
-        $self->is_required_protected_resource &&
-        $self->_check_if_request_accepts_xrds ) {
-        if ($self->xrds_locaton) {
-            $self->request->status(200);
-            $self->request->err_headers_out->add('X-XRDS-Location' => $self->xrds_location);
-            return 1;
-        } elsif ($self->request_method() eq 'GET' && 
-            (my $xrds = $self->build_xrds())) {
-            return $self->output(
-                code    => 200,
-                type    => q{application/xrds+xml},
-                content => $xrds,
-            );
-        }
-    }
-    my $problem;
-    if (OAuth::Lite::Problems->match($message)) {
-       $problem = $message; 
-       $message = sprintf(q{oauth_problem=%s}, $message);
-    }
-
-    $self->set_authenticate_header($problem);
-    return $self->output(
-        code    => $code, 
-        type    => q{text/plain; charset=utf-8},
-        content => $message,
-    );
+   # if ( ( $self->request_method() eq 'GET'
+   #     || $self->request_method() eq 'HEAD') && 
+   #     $self->is_required_protected_resource &&
+   #     $self->_check_if_request_accepts_xrds ) {
+   #     if ($self->xrds_locaton) {
+   #         $self->request->status(200);
+   #         $self->request->err_headers_out->add('X-XRDS-Location' => $self->xrds_location);
+   #         return 1;
+   #     } elsif ($self->request_method() eq 'GET' && 
+   #         (my $xrds = $self->build_xrds())) {
+   #         return $self->output(
+   #             code    => 200,
+   #             type    => q{application/xrds+xml},
+   #             content => $xrds,
+   #         );
+   #     }
+   # }
+   # my $problem;
+   # if (OAuth::Lite::Problems->match($message)) {
+   #    $problem = $message; 
+   #    $message = sprintf(q{oauth_problem=%s}, $message);
+   # }
+#
+#    $self->set_authenticate_header($problem);
+#    return $self->output(
+#        code    => $code, 
+#        type    => q{text/plain; charset=utf-8},
+#        content => $message,
+#    );
 }
 
 sub output {
@@ -862,22 +862,22 @@ sub output {
 
 sub allow_extra_param {
     my $self = shift;
-    $self->oauth->allow_extra_param(@_);
+    $self->{oauth}->allow_extra_param(@_);
 }
 
 sub allow_extra_params {
     my $self = shift;
-    $self->oauth->allow_extra_params(@_);
+    $self->{oauth}->allow_extra_params(@_);
 }
 
 sub support_signature_method {
     my $self = shift;
-    $self->oauth->support_signature_method(@_);
+    $self->{oauth}->support_signature_method(@_);
 }
 
 sub support_signature_methods {
     my $self = shift;
-    $self->oauth->support_signature_methods(@_);
+    $self->{oauth}->support_signature_methods(@_);
 }
 
 sub is_reverse_phone_home {
