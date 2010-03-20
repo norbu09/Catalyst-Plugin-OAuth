@@ -12,7 +12,6 @@ use List::MoreUtils qw(none any);
 
 use base qw(
     Class::Accessor::Fast
-    Class::ErrorHandler
 );
 
 use constant PROTECTED_RESOURCE => 'PROTECTED_RESOURCE';
