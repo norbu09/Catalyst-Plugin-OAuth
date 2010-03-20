@@ -589,7 +589,7 @@ sub __oauth__service {
     }
     my $xrds_location = $self->request->header('XRDSLocation');
     $self->{xrds_location} = $xrds_location if $xrds_location;
-    #$self->{oauth}_init(@_);
+    #$self->oauth_init(@_);
 
     my $params = {};
     my $is_authorized = 0;
@@ -683,7 +683,7 @@ sub __oauth__service {
 
         $self->{oauth_completed_validation} = 1;
 
-        return $self->{oauth}_service($params);
+        return $self->oauth_service($params);
     }
 }
 
