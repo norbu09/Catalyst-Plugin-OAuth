@@ -559,6 +559,10 @@ sub __oauth__service {
 
     my $self = shift;
      $self->{oauth} = OAuth::Lite::ServerUtil->new( strict => 0 );
+     $self->oauth->allow_extra_params($self->config->{OAuth}->{allow_extra_params})
+        if $self->config->{OAuth}->{allow_extra_params};
+     $self->oauth->support_signature_methods($self->config->{OAuth}->{support_signature_methods})
+        if $self->config->{OAuth}->{support_signature_methods};
      $self->{oauth_mode} = PROTECTED_RESOURCE;
      $self->{oauth_accepts_consumer_request} = 0;
      $self->{oauth_accepts_reverse_phone_home} = 0;
