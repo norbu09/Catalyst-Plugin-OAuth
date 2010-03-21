@@ -343,7 +343,7 @@ is same as
 
     $self->{oauth}->allow_extra_param('foo');
 
-=head2 request_method
+=head2 request->method
 
 Request method (Upper Case).
 When the raw request method is POST and X-HTTP-Method-Override is define in header,
@@ -504,7 +504,7 @@ You can get error message that you set with error method.
 
     my $valid = $self->check_nonce_and_timestamp($consumer_key, $nonce, $timestamp);
     if (!$valid) {
-        return $self->errout(401, $self->errstr);
+        return $self->errout(401, $self->{oauth}->errstr);
     }
 
 =head2 output(%params)
@@ -557,11 +557,12 @@ sub oauth_init {
 sub __oauth__service {
 
     my $self = shift;
+
      $self->{oauth} = OAuth::Lite::ServerUtil->new( strict => 0 );
      $self->{oauth}->allow_extra_params($self->config->{OAuth}->{allow_extra_params})
         if $self->config->{OAuth}->{allow_extra_params};
-     $self->{oauth}->support_signature_methods($self->config->{OAuth}->{support_signature_methods})
-        if $self->config->{OAuth}->{support_signature_methods};
+     $self->{oauth}->support_signature_method($self->config->{OAuth}->{support_signature_method})
+        if $self->config->{OAuth}->{support_signature_method};
      $self->{oauth_mode} = PROTECTED_RESOURCE;
      $self->{oauth_accepts_consumer_request} = 0;
      $self->{oauth_accepts_reverse_phone_home} = 0;
@@ -605,6 +606,20 @@ sub __oauth__service {
         ($realm, $params) = parse_auth_header($authorization);
     }
 
+    if ( $self->request->method() eq 'POST'
+          &&  $self->request->header('Content-Type') =~ m!application/x-www-form-urlencoded!) {
+        for my $pair (split /&/, $self->request->body) {
+            my ($key, $value) = split /=/, $pair;
+            $params->{$key} = decode_param($value);
+        }
+    }
+
+    for my $pair (split /&/, $self->request->args) {
+        my ($key, $value) = split /=/, $pair;
+        $params->{$key} = decode_param($value);
+    }
+
+
     unless ($self->{oauth}->validate_params($params, $needs_to_check_token)) {
         return $self->errout(400, $self->{oauth}->errstr);
     }
@@ -615,18 +630,18 @@ sub __oauth__service {
 
     my $consumer_secret = $self->get_consumer_secret($consumer_key);
     unless (defined $consumer_secret) {
-        return $self->errout(401, $self->errstr||CONSUMER_KEY_UNKNOWN);
+        return $self->errout(401, $self->{oauth}->errstr||CONSUMER_KEY_UNKNOWN);
     }
 
     $self->check_nonce_and_timestamp($consumer_key, $nonce, $timestamp)
-        or return $self->errout(400, $self->errstr||TIMESTAMP_REFUSED);
+        or return $self->errout(400, $self->{oauth}->errstr||TIMESTAMP_REFUSED);
 
     my $request_uri = $self->__build_request_uri();
 
     if ($self->is_required_request_token) {
 
         $self->{oauth}->verify_signature(
-            method          => $self->request_method(),
+            method          => $self->request->method(),
             params          => $params,
             url             => $request_uri,
             consumer_secret => $consumer_secret,
@@ -634,7 +649,7 @@ sub __oauth__service {
 
         my $callback_url = $params->{oauth_callback};
         my $request_token = $self->publish_request_token($consumer_key, $callback_url)
-            or return $self->errout(401, $self->errstr);
+            or return $self->errout(401, $self->{oauth}->errstr);
         return $self->__output_token($request_token);
 
     } elsif ($self->is_required_access_token) {
@@ -642,10 +657,10 @@ sub __oauth__service {
         my $token_value = $params->{oauth_token};
         my $token_secret = $self->get_request_token_secret($token_value);
         unless (defined $token_secret) {
-            return $self->errout(401, $self->errstr||TOKEN_REJECTED);
+            return $self->errout(401, $self->{oauth}->errstr||TOKEN_REJECTED);
         }
         $self->{oauth}->verify_signature(
-            method          => $self->request_method(),
+            method          => $self->request->method(),
             params          => $params,
             url             => $request_uri,
             consumer_secret => $consumer_secret || '',
@@ -653,7 +668,7 @@ sub __oauth__service {
         ) or return $self->errout(401, $self->{oauth}->errstr||SIGNATURE_INVALID);
         my $verifier = $params->{oauth_verifier} || '';
         my $access_token = $self->publish_access_token($consumer_key, $token_value, $verifier)
-            or return $self->errout(401, $self->errstr);
+            or return $self->errout(401, $self->{oauth}->errstr);
         return $self->__output_token($access_token);
 
     } else {
@@ -663,12 +678,12 @@ sub __oauth__service {
             my $token_value = $params->{oauth_token};
             $token_secret = $self->get_access_token_secret($token_value);
             unless (defined $token_secret) {
-                return $self->errout(401, $self->errstr||TOKEN_REJECTED);
+                return $self->errout(401, $self->{oauth}->errstr||TOKEN_REJECTED);
             }
         }
 
         $self->{oauth}->verify_signature(
-            method          => $self->request_method(),
+            method          => $self->request->method(),
             params          => $params,
             url             => $request_uri,
             consumer_secret => $consumer_secret || '',
@@ -681,6 +696,7 @@ sub __oauth__service {
         }
 
         $self->{oauth_completed_validation} = 1;
+        $self->{oauth}->{params} = $params;
 
         return $self->oauth_service($params);
     }
@@ -688,7 +704,7 @@ sub __oauth__service {
 
 sub __build_request_uri {
     my $self = shift;
-    return $self->request_uri();
+    return $self->request->uri();
 }
 
 sub __output_token {
@@ -752,7 +768,8 @@ sub get_access_token_secret {
 sub get_consumer_secret {
     my ($self, $consumer_key);
     my $consumer_secret;
-    return $consumer_secret;
+    #return $consumer_secret;
+    return 'secret';
 }
 
 sub publish_request_token {
@@ -786,7 +803,7 @@ sub set_authenticate_header {
     $params{realm} = $self->{oauth_realm} if $self->{oauth_realm};
     $params{oauth_problem} = $problem if $problem;
     my $header = "OAuth " . join(", ", map sprintf(q{%s="%s"}, $_, $params{$_}), keys %params);
-    $self->request->err_headers_out->add('WWW-Authenticate', $header);
+    $self->response->header('WWW-Authenticate', $header);
 }
 
 sub _check_if_request_accepts_xrds {
@@ -812,50 +829,49 @@ sub errout {
 # TODO fix the output to use Catalyst methods
     my ($self, $code, $message, $description) = @_;
 
-   # if ( ( $self->request_method() eq 'GET'
-   #     || $self->request_method() eq 'HEAD') && 
-   #     $self->is_required_protected_resource &&
-   #     $self->_check_if_request_accepts_xrds ) {
-   #     if ($self->xrds_locaton) {
-   #         $self->request->status(200);
-   #         $self->request->err_headers_out->add('X-XRDS-Location' => $self->xrds_location);
-   #         return 1;
-   #     } elsif ($self->request_method() eq 'GET' && 
-   #         (my $xrds = $self->build_xrds())) {
-   #         return $self->output(
-   #             code    => 200,
-   #             type    => q{application/xrds+xml},
-   #             content => $xrds,
-   #         );
-   #     }
-   # }
-   # my $problem;
-   # if (OAuth::Lite::Problems->match($message)) {
-   #    $problem = $message; 
-   #    $message = sprintf(q{oauth_problem=%s}, $message);
-   # }
-#
-#    $self->set_authenticate_header($problem);
-#    return $self->output(
-#        code    => $code, 
-#        type    => q{text/plain; charset=utf-8},
-#        content => $message,
-#    );
+    if ( ( $self->request->method() eq 'GET'
+        || $self->request->method() eq 'HEAD') && 
+        $self->is_required_protected_resource &&
+        $self->_check_if_request_accepts_xrds ) {
+        if ($self->xrds_locaton) {
+            $self->response->header('X-XRDS-Location' => $self->xrds_location);
+            return 1;
+        } elsif ($self->request->method() eq 'GET' && 
+            (my $xrds = $self->build_xrds())) {
+            return $self->output(
+                code    => 200,
+                type    => q{application/xrds+xml},
+                content => $xrds,
+            );
+        }
+    }
+    my $problem;
+    if (OAuth::Lite::Problems->match($message)) {
+       $problem = $message; 
+       $message = sprintf(q{oauth_problem=%s}, $message);
+    }
+
+    $self->set_authenticate_header($problem);
+    return $self->output(
+        code    => $code, 
+        type    => q{text/plain; charset=utf-8},
+        content => $message,
+    );
 }
 
 sub output {
 # TODO needs rewrite (possibly simply hand off to catalyst
     my $self = shift;
-    #my %args = @_;
-    #my $code = $args{code} || 200;
-    #my $type = $args{type} || q{text/plain; charset=utf-8};
-    #my $content = $args{content} || '';
-    #$self->request->status($code);
-    #if ($content) {
-    #    $self->request->content_type($type);
-    #    $self->request->set_content_length(bytes::length($content));
-    #    $self->request->print($content);
-    #}
+    my %args = @_;
+    my $code = $args{code} || 200;
+    my $type = $args{type} || q{text/plain; charset=utf-8};
+    my $content = $args{content} || '';
+    $self->response->status($code);
+    if ($content) {
+        $self->response->content_type($type);
+        #$self->response->content_length(bytes::length($content));
+        $self->stash->{data}->{oauth} = $content;
+    }
     return 1;
 }
 
