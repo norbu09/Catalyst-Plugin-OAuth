@@ -2,7 +2,7 @@ package Catalyst::Plugin::OAuth::Store::CouchDB;
 
 use strict;
 use warnings;
-use base qw/Catalyst::Plugin::OAuth Class::Accessor::Fast/;
+use base qw/Catalyst::Plugin::OAuth/;
 use Store::CouchDB;
 
 sub get_request_token_secret {
@@ -69,10 +69,11 @@ sub publish_request_token {
     my $doc   = {
         token        => $token->token,
         secret       => $token->secret,
-        realm        => $self->realm,
+        realm        => $self->oauth_realm,
         consumer_key => $consumer_key,
         expired_on   => '',
         callback     => $callback_url,
+        type => 'request',
     };
     my $id = $db->put_doc( { doc => $doc } );
     return $token;
@@ -99,11 +100,12 @@ sub publish_access_token {
     my $access_token = OAuth::Lite::Token->new_random;
     $doc          = {
         token        => $request_token->{token},
-        realm        => $self->realm,
+        realm        => $self->oauth_realm,
         secret       => $request_token->{secret},
         consumer_key => $consumer_key,
         author       => $request_token->{author},
         expired_on   => '',
+        type => 'access',
     };
 
     my $id = $db->put_doc( { doc => $doc } );
@@ -136,7 +138,8 @@ sub check_nonce_and_timestamp {
     #        ],
     #    }
     #);
-    if ( $count->[0] > 0 ) {
+    my $c = $count->[0] || 0;
+    if ( $c > 0 ) {
         return $self->error(q{Invalid timestamp or consumer});
     }
 
@@ -145,6 +148,7 @@ sub check_nonce_and_timestamp {
         consumer_key => $consumer_key,
         nonce        => $nonce,
         timestamp    => $timestamp,
+        type => 'log',
     };
     $db->put_doc( { doc => $doc } );
     return 1;

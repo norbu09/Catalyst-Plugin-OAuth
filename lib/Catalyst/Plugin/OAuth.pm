@@ -561,8 +561,9 @@ sub __oauth__service {
      $self->{oauth} = OAuth::Lite::ServerUtil->new( strict => 0 );
      $self->{oauth}->allow_extra_params($self->config->{OAuth}->{allow_extra_params})
         if $self->config->{OAuth}->{allow_extra_params};
-     $self->{oauth}->support_signature_method($self->config->{OAuth}->{support_signature_method})
-        if $self->config->{OAuth}->{support_signature_method};
+     #$self->{oauth}->support_signature_method($self->config->{OAuth}->{support_signature_method})
+     #   if $self->config->{OAuth}->{support_signature_method};
+     $self->{oauth}->support_signature_method('HMAC-SHA1');
      $self->{oauth_mode} = PROTECTED_RESOURCE;
      $self->{oauth_accepts_consumer_request} = 0;
      $self->{oauth_accepts_reverse_phone_home} = 0;
@@ -570,7 +571,7 @@ sub __oauth__service {
      $self->{oauth_completed_validation} = 0;
 
     my $realm = $self->request->header('Realm');
-    $self->{oauth_realm} = $realm if $realm;
+    $self->oauth_realm = $realm if $realm;
     my $accept_cr = $self->request->header('AcceptConsumerRequest');
     $self->{oauth_accepts_consumer_request} = 1 if $accept_cr;
     my $accept_rp = $self->request->header('AcceptReversePhoneHome');
@@ -606,18 +607,18 @@ sub __oauth__service {
         ($realm, $params) = parse_auth_header($authorization);
     }
 
-    if ( $self->request->method() eq 'POST'
-          &&  $self->request->header('Content-Type') =~ m!application/x-www-form-urlencoded!) {
-        for my $pair (split /&/, $self->request->body) {
-            my ($key, $value) = split /=/, $pair;
-            $params->{$key} = decode_param($value);
-        }
-    }
-
-    for my $pair (split /&/, $self->request->args) {
-        my ($key, $value) = split /=/, $pair;
-        $params->{$key} = decode_param($value);
-    }
+    #if ( $self->request->method() eq 'POST'
+    ##      &&  $self->request->header('Content-Type') =~ m!application/x-www-form-urlencoded!) {
+    #    for my $pair (split /&/, $self->request->body) {
+    #        my ($key, $value) = split /=/, $pair;
+    #        $params->{$key} = decode_param($value);
+    #    }
+    #}
+#
+#    for my $pair (split /&/, $self->request->args) {
+#        my ($key, $value) = split /=/, $pair;
+#        $params->{$key} = decode_param($value);
+#    }
 
 
     unless ($self->{oauth}->validate_params($params, $needs_to_check_token)) {
@@ -797,10 +798,9 @@ sub check_nonce_and_timestamp {
 
 sub set_authenticate_header {
 # TODO fix this thing to use Catalyst stuff
-    my $self = shift;
-    my $problem = shift;
-    my %params = ();
-    $params{realm} = $self->{oauth_realm} if $self->{oauth_realm};
+    my ($self, $problem, $params) = @_;
+    my %params = %{$params};
+    $params{realm} = $self->oauth_realm if $self->oauth_realm;
     $params{oauth_problem} = $problem if $problem;
     my $header = "OAuth " . join(", ", map sprintf(q{%s="%s"}, $_, $params{$_}), keys %params);
     $self->response->header('WWW-Authenticate', $header);

@@ -12,6 +12,7 @@ inc/Module/Install/Metadata.pm
 inc/Module/Install/Win32.pm
 inc/Module/Install/WriteAll.pm
 lib/Catalyst/Plugin/OAuth.pm
+lib/Catalyst/Plugin/OAuth/Store/CouchDB.pm
 Makefile.PL
 MANIFEST
 META.yml
