@@ -570,8 +570,6 @@ sub __oauth__service {
      $self->{oauth_params} = {};
      $self->{oauth_completed_validation} = 0;
 
-    my $realm = $self->request->header('Realm');
-    $self->oauth_realm = $realm if $realm;
     my $accept_cr = $self->request->header('AcceptConsumerRequest');
     $self->{oauth_accepts_consumer_request} = 1 if $accept_cr;
     my $accept_rp = $self->request->header('AcceptReversePhoneHome');
@@ -593,6 +591,7 @@ sub __oauth__service {
     #$self->oauth_init(@_);
 
     my $params = {};
+    my $realm;
     my $is_authorized = 0;
 
     my $needs_to_check_token = ( $self->is_required_request_token
@@ -605,6 +604,7 @@ sub __oauth__service {
     my $authorization = $self->request->header('Authorization');
     if ($authorization && $authorization =~ /^\s*OAuth/) {
         ($realm, $params) = parse_auth_header($authorization);
+        $self->oauth_realm = $realm if $realm;
     }
 
     #if ( $self->request->method() eq 'POST'
@@ -799,7 +799,10 @@ sub check_nonce_and_timestamp {
 sub set_authenticate_header {
 # TODO fix this thing to use Catalyst stuff
     my ($self, $problem, $params) = @_;
-    my %params = %{$params};
+    my %params;
+    foreach my $key (keys %{$params}){
+        $params{'oauth_'.$key} = $params->{$key};
+    }
     $params{realm} = $self->oauth_realm if $self->oauth_realm;
     $params{oauth_problem} = $problem if $problem;
     my $header = "OAuth " . join(", ", map sprintf(q{%s="%s"}, $_, $params{$_}), keys %params);
