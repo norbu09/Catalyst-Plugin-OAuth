@@ -9,6 +9,7 @@ use OAuth::Lite::AuthMethod qw(:all);
 use OAuth::Lite::Problems qw(:all);
 
 use List::MoreUtils qw(none any);
+use Data::Dumper;
 
 use base qw(
     Class::Accessor::Fast
@@ -550,11 +551,6 @@ sub setup {
 }
 
 sub oauth_init {
-    my ($self, %args) = @_;
-    $self->__oauth__service(@_);
-}
-
-sub __oauth__service {
 
     my $self = shift;
 
@@ -564,30 +560,26 @@ sub __oauth__service {
      #$self->{oauth}->support_signature_method($self->config->{OAuth}->{support_signature_method})
      #   if $self->config->{OAuth}->{support_signature_method};
      $self->{oauth}->support_signature_method('HMAC-SHA1');
-     $self->{oauth_mode} = PROTECTED_RESOURCE;
-     $self->{oauth_accepts_consumer_request} = 0;
-     $self->{oauth_accepts_reverse_phone_home} = 0;
-     $self->{oauth_params} = {};
+     $self->accepts_consumer_request(0);
+     $self->accepts_reverse_phone_home(0);
      $self->{oauth_completed_validation} = 0;
 
     my $accept_cr = $self->request->header('AcceptConsumerRequest');
-    $self->{oauth_accepts_consumer_request} = 1 if $accept_cr;
+    $self->accepts_consumer_request(1) if $accept_cr;
     my $accept_rp = $self->request->header('AcceptReversePhoneHome');
     if ($accept_rp) {
-        $self->{oauth_accepts_reverse_phone_home} = 1;
-        $self->allow_extra_param('xoauth_requestor_id');
+        $self->accepts_reverse_phone_home(1);
+        $self->{oauth}->allow_extra_params('xoauth_requestor_id');
     }
     my $mode = $self->request->header('Mode');
     my @valid_modes = (PROTECTED_RESOURCE, REQUEST_TOKEN, ACCESS_TOKEN);
     if ($mode) {
         if (none { $mode eq $_ } @valid_modes) {
             die "Invalid mode."; 
-        } else {
-            $self->{oauth_mode} = $mode;
         }
     }
     my $xrds_location = $self->request->header('XRDSLocation');
-    $self->{xrds_location} = $xrds_location if $xrds_location;
+    $self->xrds_location($xrds_location) if $xrds_location;
     #$self->oauth_init(@_);
 
     my $params = {};
@@ -651,7 +643,7 @@ sub __oauth__service {
         my $callback_url = $params->{oauth_callback};
         my $request_token = $self->publish_request_token($consumer_key, $callback_url)
             or return $self->errout(401, $self->{oauth}->errstr);
-        return $self->__output_token($request_token);
+        return $request_token;
 
     } elsif ($self->is_required_access_token) {
 
@@ -670,7 +662,7 @@ sub __oauth__service {
         my $verifier = $params->{oauth_verifier} || '';
         my $access_token = $self->publish_access_token($consumer_key, $token_value, $verifier)
             or return $self->errout(401, $self->{oauth}->errstr);
-        return $self->__output_token($access_token);
+        return $access_token;
 
     } else {
 
@@ -697,9 +689,7 @@ sub __oauth__service {
         }
 
         $self->{oauth_completed_validation} = 1;
-        $self->{oauth}->{params} = $params;
-
-        return $self->oauth_service($params);
+        return $self->get_access_token_author($params->{oauth_token});
     }
 }
 
@@ -750,10 +740,6 @@ sub accepts_reverse_phone_home {
     return $self->{accepts_reverse_phone_home};
 }
 
-sub oauth_service {
-    my ($self, $params) = @_;
-}
-
 sub get_request_token_secret {
     my ($self, $token) = @_;
     my $secret;
@@ -777,6 +763,12 @@ sub publish_request_token {
     my ($self, $consumer_key, $callback_url) = @_;
     my $token = OAuth::Lite::Token->new;
     return $token;
+}
+
+sub publish_authorize_pin {
+    my ($self, $consumer_key, $user) = @_;
+    my $pin = '1234';
+    return $pin;
 }
 
 sub publish_access_token {
@@ -832,22 +824,22 @@ sub errout {
 # TODO fix the output to use Catalyst methods
     my ($self, $code, $message, $description) = @_;
 
-    if ( ( $self->request->method() eq 'GET'
-        || $self->request->method() eq 'HEAD') && 
-        $self->is_required_protected_resource &&
-        $self->_check_if_request_accepts_xrds ) {
-        if ($self->xrds_locaton) {
-            $self->response->header('X-XRDS-Location' => $self->xrds_location);
-            return 1;
-        } elsif ($self->request->method() eq 'GET' && 
-            (my $xrds = $self->build_xrds())) {
-            return $self->output(
-                code    => 200,
-                type    => q{application/xrds+xml},
-                content => $xrds,
-            );
-        }
-    }
+    #if ( ( $self->request->method() eq 'GET'
+    #    || $self->request->method() eq 'HEAD') && 
+    #    $self->is_required_protected_resource &&
+    #    $self->_check_if_request_accepts_xrds ) {
+    #    if ($self->xrds_locaton) {
+    #        $self->response->header('X-XRDS-Location' => $self->xrds_location);
+    #        return 1;
+    #    } elsif ($self->request->method() eq 'GET' && 
+    #        (my $xrds = $self->build_xrds())) {
+    #        return $self->output(
+    #            code    => 200,
+    #            type    => q{application/xrds+xml},
+    #            content => $xrds,
+    #        );
+    #    }
+    #}
     my $problem;
     if (OAuth::Lite::Problems->match($message)) {
        $problem = $message; 

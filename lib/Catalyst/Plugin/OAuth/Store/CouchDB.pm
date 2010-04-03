@@ -26,6 +26,34 @@ sub get_request_token_secret {
     return $token->{secret};
 }
 
+sub publish_authorize_pin {
+    my ( $self, $token_string, $user ) = @_;
+    my $db = $self->_db();
+
+    my $view = {
+        view => 'oauth/get_request_token',
+        opts => { key => '"' . $token_string . '"' },
+    };
+    my $doc   = $db->get_view($view);
+    my $token = $doc->{$token_string};
+
+    unless ( $token
+        && !$token->{is_exchanged_to_access_token}
+        && !$token->{is_expired} )
+    {
+        return $self->error(q{Invalid token});
+    }
+
+    $token->{is_authorized_by_user} = 1;
+    $token->{user} = $user;
+    my $pin = int(rand(99999999));
+    $token->{verifier} = $pin;
+    $token->{has_verifier} = 1;
+    $db->put_doc({doc => $token});
+
+    return $pin;
+}
+
 sub get_access_token_secret {
     my ( $self, $token_string ) = @_;
     my $db = $self->_db();
@@ -42,6 +70,24 @@ sub get_access_token_secret {
         return $self->error(q{Invalid token});
     }
     return $token->{secret};
+}
+
+sub get_access_token_author {
+    my ( $self, $token_string ) = @_;
+    my $db = $self->_db();
+
+    my $view = {
+        view => 'oauth/get_access_token',
+        opts => { key => '"' . $token_string . '"' },
+    };
+    my $doc   = $db->get_view($view);
+    my $token = $doc->{$token_string};
+    unless ( $token
+        && !$token->{is_expired} )
+    {
+        return $self->error(q{Invalid token});
+    }
+    return $token->{author};
 }
 
 sub get_consumer_secret {
@@ -99,11 +145,11 @@ sub publish_access_token {
     }
     my $access_token = OAuth::Lite::Token->new_random;
     $doc          = {
-        token        => $request_token->{token},
+        token        => $access_token->{token},
         realm        => $self->oauth_realm,
-        secret       => $request_token->{secret},
+        secret       => $access_token->{secret},
         consumer_key => $consumer_key,
-        author       => $request_token->{author},
+        author       => $request_token->{user},
         expired_on   => '',
         type => 'access',
     };
